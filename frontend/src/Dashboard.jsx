@@ -1,7 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { Line } from "react-chartjs-2";
-import { ref, onValue } from "firebase/database";
-import { database } from "./firebase";
 import {
   Chart as ChartJS,
   LineElement,
@@ -14,7 +12,6 @@ import {
 } from "chart.js";
 import "./index.css"; // Make sure to import CSS
 
-// Register the components needed for the chart
 ChartJS.register(
   LineElement,
   PointElement,
@@ -29,33 +26,58 @@ const Dashboard = () => {
   const [sensorData, setSensorData] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // State variables for limits
   const [waterLevelLimit, setWaterLevelLimit] = useState(0.0);
   const [waterDetectedLimit, setWaterDetectedLimit] = useState(0.0);
   const [isEditingWaterLevel, setIsEditingWaterLevel] = useState(false);
   const [isEditingWaterDetected, setIsEditingWaterDetected] = useState(false);
 
   useEffect(() => {
-    const moistureDetectorRef = ref(database, "sensorModules/moistureDetector");
+    // WebSocket connection for hygrometer and flow rate data
+    const ws = new WebSocket("ws://localhost:3000"); // Adjust your server URL
 
-    onValue(moistureDetectorRef, (snapshot) => {
-      const data = snapshot.val();
-      if (data) {
-        setSensorData((prevData) => [
-          ...prevData,
-          {
-            time: new Date().toLocaleTimeString(),
-            waterLevel: data.waterLevel,
-            waterDetected: data.waterDetected,
-          },
-        ]);
+    ws.onopen = () => {
+      console.log("WebSocket connection established");
+    };
+
+    ws.onmessage = (message) => {
+      const parsedData = JSON.parse(message.data);
+      console.log("Received data:", parsedData);
+
+      // Check if parsedData has the necessary structure for hygrometer and flowRate
+      if (parsedData.hygrometer && parsedData.flowRate) {
+        const hygrometerData = parsedData.hygrometer;
+        const flowRateData = parsedData.flowRate;
+
+        // Create new data point
+        const newDataPoint = {
+          time: new Date(),
+          waterDetected: hygrometerData, // Hygrometer (moisture) under waterDetected
+          waterLevel: flowRateData,      // Flow rate under waterLevel
+        };
+
+        // Update sensorData state, keeping only the last 15 seconds of data
+        setSensorData((prevData) => {
+          // Filter out data older than 8 seconds
+          const filteredData = prevData.filter((data) => {
+            const timeDifference = newDataPoint.time - new Date(data.time);
+            return timeDifference <= 8000; // 8 seconds
+          });
+
+          // Append the new data point and return updated state
+          return [...filteredData, newDataPoint];
+        });
+
         setLoading(false);
       }
-    });
+    };
+
+    return () => {
+      ws.close();
+    };
   }, []);
 
   const chartData = {
-    labels: sensorData.map((data) => data.time),
+    labels: sensorData.map((data) => data.time.toLocaleTimeString()),
     datasets: [
       {
         label: "Change in Water Level",
@@ -67,7 +89,7 @@ const Dashboard = () => {
   };
 
   const chartData2 = {
-    labels: sensorData.map((data) => data.time),
+    labels: sensorData.map((data) => data.time.toLocaleTimeString()),
     datasets: [
       {
         label: "Water Detected",
@@ -78,32 +100,14 @@ const Dashboard = () => {
     ],
   };
 
-  // Handlers for editing limits
-  const handleWaterLevelEdit = () => {
-    setIsEditingWaterLevel(true);
-  };
+  const handleWaterLevelEdit = () => setIsEditingWaterLevel(true);
+  const handleWaterDetectedEdit = () => setIsEditingWaterDetected(true);
 
-  const handleWaterDetectedEdit = () => {
-    setIsEditingWaterDetected(true);
-  };
+  const handleWaterLevelChange = (e) => setWaterLevelLimit(e.target.value);
+  const handleWaterDetectedChange = (e) => setWaterDetectedLimit(e.target.value);
 
-  const handleWaterLevelChange = (e) => {
-    setWaterLevelLimit(e.target.value);
-  };
-
-  const handleWaterDetectedChange = (e) => {
-    setWaterDetectedLimit(e.target.value);
-  };
-
-  const handleWaterLevelSave = () => {
-    setIsEditingWaterLevel(false);
-    // Here you can save the updated limit to your database if needed
-  };
-
-  const handleWaterDetectedSave = () => {
-    setIsEditingWaterDetected(false);
-    // Here you can save the updated limit to your database if needed
-  };
+  const handleWaterLevelSave = () => setIsEditingWaterLevel(false);
+  const handleWaterDetectedSave = () => setIsEditingWaterDetected(false);
 
   return (
     <div className="dashboard-container">
@@ -147,10 +151,7 @@ const Dashboard = () => {
               {isEditingWaterDetected ? (
                 <button onClick={handleWaterDetectedSave}>Save</button>
               ) : (
-                <button
-                  className="edit-button"
-                  onClick={handleWaterDetectedEdit}
-                >
+                <button className="edit-button" onClick={handleWaterDetectedEdit}>
                   Edit
                 </button>
               )}
@@ -161,18 +162,15 @@ const Dashboard = () => {
             <div className="warnings-list">
               {sensorData.length > 0 && (
                 <>
-                  {sensorData[sensorData.length - 1].waterLevel >
-                    waterLevelLimit && (
+                  {sensorData[sensorData.length - 1].waterLevel > waterLevelLimit && (
                     <div className="limit-item">
                       <p>
                         CHANGE IN WATER LEVEL LIMIT REACHED: Current Change in
-                        Water Level at{" "}
-                        {sensorData[sensorData.length - 1].waterLevel} cm³/s
+                        Water Level at {sensorData[sensorData.length - 1].waterLevel} cm³/s
                       </p>
                     </div>
                   )}
-                  {sensorData[sensorData.length - 1].waterDetected >
-                    waterDetectedLimit && (
+                  {sensorData[sensorData.length - 1].waterDetected > waterDetectedLimit && (
                     <div className="limit-item">
                       <p>
                         WATER DETECTED LIMIT REACHED: Current Water Detected at{" "}
@@ -183,7 +181,6 @@ const Dashboard = () => {
                 </>
               )}
             </div>
-            <button className="view-all-button">View all</button>
           </div>
         </div>
         <div className="right-panel">
@@ -200,10 +197,7 @@ const Dashboard = () => {
             {loading ? (
               <p>Loading...</p>
             ) : (
-              <Line
-                data={chartData2}
-                options={{ maintainAspectRatio: false }}
-              />
+              <Line data={chartData2} options={{ maintainAspectRatio: false }} />
             )}
           </div>
         </div>
