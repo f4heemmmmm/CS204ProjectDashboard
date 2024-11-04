@@ -25,11 +25,7 @@ ChartJS.register(
 const Dashboard = () => {
   const [sensorData, setSensorData] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const [waterLevelLimit, setWaterLevelLimit] = useState(0.0);
-  const [waterDetectedLimit, setWaterDetectedLimit] = useState(0.0);
-  const [isEditingWaterLevel, setIsEditingWaterLevel] = useState(false);
-  const [isEditingWaterDetected, setIsEditingWaterDetected] = useState(false);
+  const [warnings, setWarnings] = useState([]); // Stores active warnings
 
   useEffect(() => {
     // WebSocket connection for hygrometer and flow rate data
@@ -48,16 +44,15 @@ const Dashboard = () => {
         const hygrometerData = parsedData.hygrometer;
         const flowRateData = parsedData.flowRate;
 
-        // Create new data point
+        // Create new data point with timestamp
         const newDataPoint = {
           time: new Date(),
           waterDetected: hygrometerData, // Hygrometer (moisture) under waterDetected
           waterLevel: flowRateData,      // Flow rate under waterLevel
         };
 
-        // Update sensorData state, keeping only the last 15 seconds of data
+        // Update sensorData state, keeping only the last 8 seconds of data
         setSensorData((prevData) => {
-          // Filter out data older than 8 seconds
           const filteredData = prevData.filter((data) => {
             const timeDifference = newDataPoint.time - new Date(data.time);
             return timeDifference <= 8000; // 8 seconds
@@ -66,6 +61,24 @@ const Dashboard = () => {
           // Append the new data point and return updated state
           return [...filteredData, newDataPoint];
         });
+
+        // Check for warnings and update
+        const newWarnings = [];
+        if (flowRateData > 0) {
+          newWarnings.push({
+            message: `CHANGE IN WATER LEVEL DETECTED: ${flowRateData} cm³/s at ${newDataPoint.time.toLocaleTimeString()}`,
+            timestamp: newDataPoint.time,
+          });
+        }
+        if (hygrometerData > 0) {
+          newWarnings.push({
+            message: `WATER DETECTED: ${hygrometerData} % at ${newDataPoint.time.toLocaleTimeString()}`,
+            timestamp: newDataPoint.time,
+          });
+        }
+
+        // Append new warnings to state
+        setWarnings((prevWarnings) => [...prevWarnings, ...newWarnings]);
 
         setLoading(false);
       }
@@ -100,15 +113,6 @@ const Dashboard = () => {
     ],
   };
 
-  const handleWaterLevelEdit = () => setIsEditingWaterLevel(true);
-  const handleWaterDetectedEdit = () => setIsEditingWaterDetected(true);
-
-  const handleWaterLevelChange = (e) => setWaterLevelLimit(e.target.value);
-  const handleWaterDetectedChange = (e) => setWaterDetectedLimit(e.target.value);
-
-  const handleWaterLevelSave = () => setIsEditingWaterLevel(false);
-  const handleWaterDetectedSave = () => setIsEditingWaterDetected(false);
-
   return (
     <div className="dashboard-container">
       <header className="header">
@@ -116,69 +120,17 @@ const Dashboard = () => {
       </header>
       <div className="content">
         <div className="left-panel">
-          <div className="limits-section">
-            <h2>Limits</h2>
-            <div className="limit-item">
-              <div className="limit-label">Change in Water Level</div>
-              {isEditingWaterLevel ? (
-                <input
-                  type="number"
-                  value={waterLevelLimit}
-                  onChange={handleWaterLevelChange}
-                />
-              ) : (
-                <div className="limit-value">{waterLevelLimit} cm³/s</div>
-              )}
-              {isEditingWaterLevel ? (
-                <button onClick={handleWaterLevelSave}>Save</button>
-              ) : (
-                <button className="edit-button" onClick={handleWaterLevelEdit}>
-                  Edit
-                </button>
-              )}
-            </div>
-            <div className="limit-item">
-              <div className="limit-label">Water Detected</div>
-              {isEditingWaterDetected ? (
-                <input
-                  type="number"
-                  value={waterDetectedLimit}
-                  onChange={handleWaterDetectedChange}
-                />
-              ) : (
-                <div className="limit-value">{waterDetectedLimit} cm³</div>
-              )}
-              {isEditingWaterDetected ? (
-                <button onClick={handleWaterDetectedSave}>Save</button>
-              ) : (
-                <button className="edit-button" onClick={handleWaterDetectedEdit}>
-                  Edit
-                </button>
-              )}
-            </div>
-          </div>
           <div className="warnings-section">
             <h2>Warnings</h2>
             <div className="warnings-list">
-              {sensorData.length > 0 && (
-                <>
-                  {sensorData[sensorData.length - 1].waterLevel > waterLevelLimit && (
-                    <div className="limit-item">
-                      <p>
-                        CHANGE IN WATER LEVEL LIMIT REACHED: Current Change in
-                        Water Level at {sensorData[sensorData.length - 1].waterLevel} cm³/s
-                      </p>
-                    </div>
-                  )}
-                  {sensorData[sensorData.length - 1].waterDetected > waterDetectedLimit && (
-                    <div className="limit-item">
-                      <p>
-                        WATER DETECTED LIMIT REACHED: Current Water Detected at{" "}
-                        {sensorData[sensorData.length - 1].waterDetected} cm³
-                      </p>
-                    </div>
-                  )}
-                </>
+              {warnings.length > 0 ? (
+                warnings.map((warning, index) => (
+                  <div key={index} className="limit-item">
+                    <p>{warning.message}</p>
+                  </div>
+                ))
+              ) : (
+                <p>No warnings at this time.</p>
               )}
             </div>
           </div>
