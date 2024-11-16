@@ -10,7 +10,7 @@ import {
   Tooltip,
   Legend,
 } from "chart.js";
-import "./index.css"; // Make sure to import CSS
+import "./index.css"; // Ensure to import CSS
 
 ChartJS.register(
   LineElement,
@@ -25,12 +25,8 @@ ChartJS.register(
 const Dashboard = () => {
   const [sensorData, setSensorData] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  const [waterLevelLimit, setWaterLevelLimit] = useState(0.0);
-  const [waterDetectedLimit, setWaterDetectedLimit] = useState(0.0);
-  const [isEditingWaterLevel, setIsEditingWaterLevel] = useState(false);
-  const [isEditingWaterDetected, setIsEditingWaterDetected] = useState(false);
-
+  
+  const [warnings, setWarnings] = useState([]); //Stores active warnings
   useEffect(() => {
     // WebSocket connection for hygrometer and flow rate data
     const ws = new WebSocket("ws://localhost:3000"); // Adjust your server URL
@@ -42,34 +38,76 @@ const Dashboard = () => {
     ws.onmessage = (message) => {
       const parsedData = JSON.parse(message.data);
       console.log("Received data:", parsedData);
-
-      // Check if parsedData has the necessary structure for hygrometer and flowRate
-      if (parsedData.hygrometer && parsedData.flowRate) {
-        const hygrometerData = parsedData.hygrometer;
-        const flowRateData = parsedData.flowRate;
-
-        // Create new data point
+    
+      if (parsedData.hygrometer !== undefined && parsedData.flowRate !== undefined) {
+        // Use Math.abs to ensure the flowRate is always positive
+        const adjustedFlowRate = Math.abs(parsedData.flowRate);
+    
         const newDataPoint = {
           time: new Date(),
-          waterDetected: hygrometerData, // Hygrometer (moisture) under waterDetected
-          waterLevel: flowRateData,      // Flow rate under waterLevel
+          waterDetected: parsedData.hygrometer,
+          waterLevel: adjustedFlowRate, // Store the adjusted flow rate
         };
-
-        // Update sensorData state, keeping only the last 15 seconds of data
+    
         setSensorData((prevData) => {
-          // Filter out data older than 8 seconds
-          const filteredData = prevData.filter((data) => {
-            const timeDifference = newDataPoint.time - new Date(data.time);
-            return timeDifference <= 8000; // 8 seconds
-          });
-
-          // Append the new data point and return updated state
-          return [...filteredData, newDataPoint];
+          console.log("Previous Data:", prevData);
+          if (prevData.length >= 100) {
+            return [...prevData.slice(1), newDataPoint];
+          }
+          return [...prevData, newDataPoint];
         });
-
+    
+        const currentTime = new Date();
+    
+        setWarnings((prevWarnings) => {
+          const updatedWarnings = [...prevWarnings]; // Create a copy of the warnings array
+          
+          // Replace the flowRate warning if it already exists
+          if (adjustedFlowRate > 0) {
+            const flowRateWarningIndex = updatedWarnings.findIndex((warning) =>
+              warning.message.includes("CHANGE IN WATER LEVEL DETECTED")
+            );
+            if (flowRateWarningIndex !== -1) {
+              // Replace the old flowRate warning
+              updatedWarnings[flowRateWarningIndex] = {
+                message: `CHANGE IN WATER LEVEL DETECTED: ${adjustedFlowRate} cm³/s at ${newDataPoint.time.toLocaleTimeString()}`,
+                timestamp: newDataPoint.time,
+              };
+            } else {
+              // Add a new flowRate warning if none existed before
+              updatedWarnings.push({
+                message: `CHANGE IN WATER LEVEL DETECTED: ${adjustedFlowRate} cm³/s at ${newDataPoint.time.toLocaleTimeString()}`,
+                timestamp: newDataPoint.time,
+              });
+            }
+          }
+    
+          // Replace the hygrometer warning if it already exists
+          if (parsedData.hygrometer > 0) {
+            const hygrometerWarningIndex = updatedWarnings.findIndex((warning) =>
+              warning.message.includes("WATER DETECTED")
+            );
+            if (hygrometerWarningIndex !== -1) {
+              // Replace the old hygrometer warning
+              updatedWarnings[hygrometerWarningIndex] = {
+                message: `WATER DETECTED: ${parsedData.hygrometer} % at ${newDataPoint.time.toLocaleTimeString()}`,
+                timestamp: newDataPoint.time,
+              };
+            } else {
+              // Add a new hygrometer warning if none existed before
+              updatedWarnings.push({
+                message: `WATER DETECTED: ${parsedData.hygrometer} % at ${newDataPoint.time.toLocaleTimeString()}`,
+                timestamp: newDataPoint.time,
+              });
+            }
+          }
+    
+          return updatedWarnings;
+        });
+    
         setLoading(false);
       }
-    };
+    };    
 
     return () => {
       ws.close();
@@ -100,14 +138,6 @@ const Dashboard = () => {
     ],
   };
 
-  const handleWaterLevelEdit = () => setIsEditingWaterLevel(true);
-  const handleWaterDetectedEdit = () => setIsEditingWaterDetected(true);
-
-  const handleWaterLevelChange = (e) => setWaterLevelLimit(e.target.value);
-  const handleWaterDetectedChange = (e) => setWaterDetectedLimit(e.target.value);
-
-  const handleWaterLevelSave = () => setIsEditingWaterLevel(false);
-  const handleWaterDetectedSave = () => setIsEditingWaterDetected(false);
 
   return (
     <div className="dashboard-container">
@@ -116,69 +146,17 @@ const Dashboard = () => {
       </header>
       <div className="content">
         <div className="left-panel">
-          <div className="limits-section">
-            <h2>Limits</h2>
-            <div className="limit-item">
-              <div className="limit-label">Change in Water Level</div>
-              {isEditingWaterLevel ? (
-                <input
-                  type="number"
-                  value={waterLevelLimit}
-                  onChange={handleWaterLevelChange}
-                />
-              ) : (
-                <div className="limit-value">{waterLevelLimit} cm³/s</div>
-              )}
-              {isEditingWaterLevel ? (
-                <button onClick={handleWaterLevelSave}>Save</button>
-              ) : (
-                <button className="edit-button" onClick={handleWaterLevelEdit}>
-                  Edit
-                </button>
-              )}
-            </div>
-            <div className="limit-item">
-              <div className="limit-label">Water Detected</div>
-              {isEditingWaterDetected ? (
-                <input
-                  type="number"
-                  value={waterDetectedLimit}
-                  onChange={handleWaterDetectedChange}
-                />
-              ) : (
-                <div className="limit-value">{waterDetectedLimit} cm³</div>
-              )}
-              {isEditingWaterDetected ? (
-                <button onClick={handleWaterDetectedSave}>Save</button>
-              ) : (
-                <button className="edit-button" onClick={handleWaterDetectedEdit}>
-                  Edit
-                </button>
-              )}
-            </div>
-          </div>
           <div className="warnings-section">
             <h2>Warnings</h2>
             <div className="warnings-list">
-              {sensorData.length > 0 && (
-                <>
-                  {sensorData[sensorData.length - 1].waterLevel > waterLevelLimit && (
-                    <div className="limit-item">
-                      <p>
-                        CHANGE IN WATER LEVEL LIMIT REACHED: Current Change in
-                        Water Level at {sensorData[sensorData.length - 1].waterLevel} cm³/s
-                      </p>
-                    </div>
-                  )}
-                  {sensorData[sensorData.length - 1].waterDetected > waterDetectedLimit && (
-                    <div className="limit-item">
-                      <p>
-                        WATER DETECTED LIMIT REACHED: Current Water Detected at{" "}
-                        {sensorData[sensorData.length - 1].waterDetected} cm³
-                      </p>
-                    </div>
-                  )}
-                </>
+            {warnings.length > 0 ? (
+                warnings.map((warning, index) => (
+                  <div key={index} className="limit-item">
+                    <p>{warning.message}</p>
+                  </div>
+                ))
+              ) : (
+                <p>No warnings at this time.</p>
               )}
             </div>
           </div>

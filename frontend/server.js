@@ -13,6 +13,7 @@ const corsOptions = {
 };
 
 const port = 3000;
+// Change portPath depending on where it's plugged in
 const portPath = 'COM8';
 
 if (!portPath) {
@@ -23,22 +24,12 @@ if (!portPath) {
 const serialPort = new SerialPort({ path: portPath, baudRate: 9600 });
 const parser = serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
 
-// Define buffer sizes
-const BUFFER_SIZE = 20;
-
-// Arrays to store the latest data
-let hygrometerData = new Array(BUFFER_SIZE).fill(0);
-let flowRateData = new Array(BUFFER_SIZE).fill(0);
+// Variables to store the latest data
+let hygrometerData = 0;
+let flowRateData = 0;
 let waterLevelData = 0;
 
-// Index to keep track of the current position in the buffer
-let currentHIndex = 0;
-let currentFIndex = 0;
-
-// Timestamps to keep track of data points
-let hygrometerTimestamps = new Array(BUFFER_SIZE).fill(0);
-let flowRateTimestamps = new Array(BUFFER_SIZE).fill(0);
-const MAX_AGE = 25000; // 20 seconds
+let debounceTimeout;
 
 // Create a WebSocket server
 const wss = new WebSocketServer({ noServer: true });
@@ -58,62 +49,32 @@ wss.on('connection', (ws) => {
 
 // Listen for data from the serial port
 parser.on('data', (data) => {
-  console.log(`Received from Arduino: ${data}`); // Log the raw data
-  const currentMillis = Date.now();
+  // clearTimeout(debounceTimeout);
+  // debounceTimeout = setTimeout(() => {
+    console.log(`Received from Arduino: ${data}`); // Log the raw data
 
-  if (data.startsWith("Hygrometer Value:")) {
-    const hygrometerValueStr = data.replace("Hygrometer Value:", "").trim();
-    const hygrometerValue = parseInt(hygrometerValueStr, 10);
+    if (data.startsWith("Hygrometer Value:")) {
+      const hygrometerValueStr = data.replace("Hygrometer Value:", "").trim();
+      hygrometerData = parseInt(hygrometerValueStr, 10);
+      console.log(`Parsed Hygrometer Value: ${hygrometerData}`);
+      broadcastData(); // Broadcast data to all connected clients
 
-    // Directly store in the circular buffer
-    hygrometerData[currentHIndex] = hygrometerValue;
-    hygrometerTimestamps[currentHIndex] = currentMillis;
-    console.log(`Parsed Hygrometer Value: ${hygrometerValue} at Index ${currentHIndex}`);
+    } else if (data.startsWith("Water Level:")) {
+      const waterLevelStr = data.replace("Water Level:", "").trim();
+      waterLevelData = parseInt(waterLevelStr, 10);
+      console.log(`Parsed Water Level: ${waterLevelData}`);
+      broadcastData(); // Send updated water level to clients
 
-    // Increment index and wrap around if necessary
-    currentHIndex = (currentHIndex + 1) % BUFFER_SIZE;
-    broadcastData(); // Broadcast data to all connected clients
-
-  } else if (data.startsWith("Water Level:")) {
-    const waterLevelStr = data.replace("Water Level:", "").trim();
-    waterLevelData = parseInt(waterLevelStr, 10);
-
-    console.log(`Parsed Water Level: ${waterLevelData}`);
-    broadcastData(); // Send updated water level to clients
-
-  } else if (data.startsWith("Flow Rate:")) {
-    const flowRateStr = data.replace("Flow Rate:", "").trim();
-    const flowRate = parseFloat(flowRateStr);
-
-    // Store in the circular buffer
-    flowRateData[currentFIndex] = flowRate;
-    flowRateTimestamps[currentFIndex] = currentMillis;
-    console.log(`Stored Flow Rate: ${flowRate} at Index ${currentFIndex}`);
-
-    // Increment index and wrap around if necessary
-    currentFIndex = (currentFIndex + 1) % BUFFER_SIZE;
-    broadcastData(); // Send updated flow rate to clients
-  }
-
-  // Remove old data for hygrometer
-  for (let i = 0; i < BUFFER_SIZE; i++) {
-    if (currentMillis - hygrometerTimestamps[i] > MAX_AGE) {
-      hygrometerData[i] = 0;
-      hygrometerTimestamps[i] = 0;
-      console.log(`Discarded old hygrometer data at Index ${i}`);
+    } else if (data.startsWith("Flow Rate:")) {
+      const flowRateStr = data.replace("Flow Rate:", "").trim();
+      flowRateData = parseFloat(flowRateStr);
+      console.log(`Parsed Flow Rate: ${flowRateData}`);
+      broadcastData(); // Send updated flow rate to clients
     }
-  }
-
-  // Remove old data for flow rate
-  for (let i = 0; i < BUFFER_SIZE; i++) {
-    if (currentMillis - flowRateTimestamps[i] > MAX_AGE) {
-      flowRateData[i] = 0;
-      flowRateTimestamps[i] = 0;
-      console.log(`Discarded old flow rate data at Index ${i}`);
-    }
-  }
+  // }, 500); // Debounce delay
 });
 
+// API endpoint to serve the latest sensor data
 app.get('/data', (req, res) => {
   res.json({
     hygrometer: hygrometerData,
@@ -124,29 +85,16 @@ app.get('/data', (req, res) => {
 
 // Create structured message to be sent to clients
 function createMessage() {
-  const validHygrometerData = hygrometerData.filter(value => value !== 0);
-  const validFlowRateData = flowRateData.filter(value => value !== 0);
-  
   return JSON.stringify({
-    hygrometer: validHygrometerData,
+    hygrometer: hygrometerData,
     waterLevel: waterLevelData,
-    flowRate: validFlowRateData
+    flowRate: flowRateData
   });
 }
 
+// Broadcast the latest data to all WebSocket clients
 function broadcastData() {
-  const validHygrometerData = hygrometerData.filter(value => value !== 0);
-  const validFlowRateData = flowRateData;
-
-  // Check if valid data exists before broadcasting
-  console.log('Broadcasting Hygrometer Data:', validHygrometerData);
-  console.log('Broadcasting Flow Rate Data:', validFlowRateData);
-
-  const message = JSON.stringify({
-    hygrometer: validHygrometerData,
-    // waterLevel: waterLevelData,
-    flowRate: validFlowRateData
-  });
+  const message = createMessage();
 
   wss.clients.forEach((client) => {
     if (client.readyState === client.OPEN) {
