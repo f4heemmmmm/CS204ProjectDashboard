@@ -25,6 +25,8 @@ ChartJS.register(
 const Dashboard = () => {
   const [sensorData, setSensorData] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [warnings, setWarnings] = useState([]); // Stores active warnings
+
   
   const [warnings, setWarnings] = useState([]); //Stores active warnings
   useEffect(() => {
@@ -38,6 +40,13 @@ const Dashboard = () => {
     ws.onmessage = (message) => {
       const parsedData = JSON.parse(message.data);
       console.log("Received data:", parsedData);
+
+      // Check if parsedData has the necessary structure for hygrometer and flowRate
+      if (parsedData.hygrometer && parsedData.flowRate) {
+        const hygrometerData = parsedData.hygrometer;
+        const flowRateData = parsedData.flowRate;
+
+        // Create new data point with timestamp
     
       if (parsedData.hygrometer !== undefined && parsedData.flowRate !== undefined) {
         // Use Math.abs to ensure the flowRate is always positive
@@ -48,8 +57,17 @@ const Dashboard = () => {
           waterDetected: parsedData.hygrometer,
           waterLevel: adjustedFlowRate, // Store the adjusted flow rate
         };
+
+        // Update sensorData state, keeping only the last 8 seconds of data
     
         setSensorData((prevData) => {
+          const filteredData = prevData.filter((data) => {
+            const timeDifference = newDataPoint.time - new Date(data.time);
+            return timeDifference <= 8000; // 8 seconds
+          });
+
+          // Append the new data point and return updated state
+          return [...filteredData, newDataPoint];
           console.log("Previous Data:", prevData);
           if (prevData.length >= 100) {
             return [...prevData.slice(1), newDataPoint];
@@ -104,6 +122,25 @@ const Dashboard = () => {
     
           return updatedWarnings;
         });
+
+        // Check for warnings and update
+        const newWarnings = [];
+        if (flowRateData > 0) {
+          newWarnings.push({
+            message: `CHANGE IN WATER LEVEL DETECTED: ${flowRateData} cm³/s at ${newDataPoint.time.toLocaleTimeString()}`,
+            timestamp: newDataPoint.time,
+          });
+        }
+        if (hygrometerData > 0) {
+          newWarnings.push({
+            message: `WATER DETECTED: ${hygrometerData} % at ${newDataPoint.time.toLocaleTimeString()}`,
+            timestamp: newDataPoint.time,
+          });
+        }
+
+        // Append new warnings to state
+        setWarnings((prevWarnings) => [...prevWarnings, ...newWarnings]);
+
     
         setLoading(false);
       }
@@ -149,6 +186,14 @@ const Dashboard = () => {
           <div className="warnings-section">
             <h2>Warnings</h2>
             <div className="warnings-list">
+              {warnings.length > 0 ? (
+                warnings.map((warning, index) => (
+                  <div key={index} className="limit-item">
+                    <p>{warning.message}</p>
+                  </div>
+                ))
+              ) : (
+                <p>No warnings at this time.</p>
             {warnings.length > 0 ? (
                 warnings.map((warning, index) => (
                   <div key={index} className="limit-item">
