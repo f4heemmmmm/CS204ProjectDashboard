@@ -22,7 +22,7 @@ body {
   display: flex;
   flex: 1;
   padding: 10px;
-  overflow: auto; /* Allow scrolling */
+  overflow: auto;
 }
 
 .left-panel {
@@ -38,21 +38,22 @@ body {
   flex: 1;
   display: flex;
   flex-direction: column;
-  justify-content: space-between; /* Stack charts without extra space */
+  justify-content: space-between;
   padding-left: 20px;
   height: 100%;
 }
 
 .chart-container {
-  flex: 0 0 45%; /* Each chart takes up 45% of the available space */
-  padding: 10px 0;
-  min-height: 0;
-  overflow: auto; /* Allow scrolling within the chart container if needed */
+  flex-grow: 1;
+  padding: 10px;
+  margin-bottom: 20px;
+  max-height: 400px; /* Add a maximum height to prevent it from growing too large */
+  min-height: 300px; /* Set a minimum height so the charts don't collapse */
 }
 
 .chart-container canvas {
   width: 100% !important;
-  height: 100% !important; /* Ensure charts resize to fit their containers */
+  height: 100% !important;
 }
 
 .limit-item {

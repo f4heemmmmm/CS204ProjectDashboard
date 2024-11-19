@@ -49,29 +49,26 @@ wss.on('connection', (ws) => {
 
 // Listen for data from the serial port
 parser.on('data', (data) => {
-  // clearTimeout(debounceTimeout);
-  // debounceTimeout = setTimeout(() => {
-    console.log(`Received from Arduino: ${data}`); // Log the raw data
+  console.log(`Received from Arduino: ${data}`); // Log the raw data
 
-    if (data.startsWith("Hygrometer Value:")) {
-      const hygrometerValueStr = data.replace("Hygrometer Value:", "").trim();
-      hygrometerData = parseInt(hygrometerValueStr, 10);
-      console.log(`Parsed Hygrometer Value: ${hygrometerData}`);
-      broadcastData(); // Broadcast data to all connected clients
+  if (data.startsWith("Hygrometer Value:")) {
+    const hygrometerValueStr = data.replace("Hygrometer Value:", "").trim();
+    hygrometerData = parseInt(hygrometerValueStr, 10);
+    console.log(`Parsed Hygrometer Value: ${hygrometerData}`);
+    broadcastData(); // Broadcast data to all connected clients
 
-    } else if (data.startsWith("Water Level:")) {
-      const waterLevelStr = data.replace("Water Level:", "").trim();
-      waterLevelData = parseInt(waterLevelStr, 10);
-      console.log(`Parsed Water Level: ${waterLevelData}`);
-      broadcastData(); // Send updated water level to clients
+  } else if (data.startsWith("Water Level:")) {
+    const waterLevelStr = data.replace("Water Level:", "").trim();
+    waterLevelData = parseInt(waterLevelStr, 10);
+    console.log(`Parsed Water Level: ${waterLevelData}`);
+    broadcastData(); // Send updated water level to clients
 
-    } else if (data.startsWith("Flow Rate:")) {
-      const flowRateStr = data.replace("Flow Rate:", "").trim();
-      flowRateData = parseFloat(flowRateStr);
-      console.log(`Parsed Flow Rate: ${flowRateData}`);
-      broadcastData(); // Send updated flow rate to clients
-    }
-  // }, 500); // Debounce delay
+  } else if (data.startsWith("Flow Rate:")) {
+    const flowRateStr = data.replace("Flow Rate:", "").trim();
+    flowRateData = parseFloat(flowRateStr);
+    console.log(`Parsed Flow Rate: ${flowRateData}`);
+    broadcastData(); // Send updated flow rate to clients
+  }
 });
 
 // API endpoint to serve the latest sensor data

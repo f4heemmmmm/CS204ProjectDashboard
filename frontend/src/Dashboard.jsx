@@ -27,8 +27,6 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [warnings, setWarnings] = useState([]); // Stores active warnings
 
-  
-  const [warnings, setWarnings] = useState([]); //Stores active warnings
   useEffect(() => {
     // WebSocket connection for hygrometer and flow rate data
     const ws = new WebSocket("ws://localhost:3000"); // Adjust your server URL
@@ -36,114 +34,77 @@ const Dashboard = () => {
     ws.onopen = () => {
       console.log("WebSocket connection established");
     };
-
     ws.onmessage = (message) => {
       const parsedData = JSON.parse(message.data);
       console.log("Received data:", parsedData);
-
-      // Check if parsedData has the necessary structure for hygrometer and flowRate
-      if (parsedData.hygrometer && parsedData.flowRate) {
-        const hygrometerData = parsedData.hygrometer;
-        const flowRateData = parsedData.flowRate;
-
-        // Create new data point with timestamp
     
-      if (parsedData.hygrometer !== undefined && parsedData.flowRate !== undefined) {
-        // Use Math.abs to ensure the flowRate is always positive
-        const adjustedFlowRate = Math.abs(parsedData.flowRate);
+      const hygrometerData = parsedData.hygrometer ?? 0;
+      const flowRateData = parsedData.flowRate ?? 0;
     
-        const newDataPoint = {
-          time: new Date(),
-          waterDetected: parsedData.hygrometer,
-          waterLevel: adjustedFlowRate, // Store the adjusted flow rate
-        };
-
-        // Update sensorData state, keeping only the last 8 seconds of data
+      // Create a new data point with timestamp
+      const newDataPoint = {
+        time: new Date(),
+        waterDetected: hygrometerData,
+        waterLevel: flowRateData,
+      };
     
-        setSensorData((prevData) => {
-          const filteredData = prevData.filter((data) => {
-            const timeDifference = newDataPoint.time - new Date(data.time);
-            return timeDifference <= 8000; // 8 seconds
-          });
-
-          // Append the new data point and return updated state
-          return [...filteredData, newDataPoint];
-          console.log("Previous Data:", prevData);
-          if (prevData.length >= 100) {
-            return [...prevData.slice(1), newDataPoint];
-          }
-          return [...prevData, newDataPoint];
+      // Update sensorData state, keeping the last 8 seconds of data
+      setSensorData((prevData) => {
+        const filteredData = prevData.filter((data) => {
+          const timeDifference = newDataPoint.time - new Date(data.time);
+          return timeDifference <= 8000; // Keep only the last 8 seconds
         });
     
-        const currentTime = new Date();
+        return [...filteredData, newDataPoint];
+      });
     
-        setWarnings((prevWarnings) => {
-          const updatedWarnings = [...prevWarnings]; // Create a copy of the warnings array
-          
-          // Replace the flowRate warning if it already exists
-          if (adjustedFlowRate > 0) {
-            const flowRateWarningIndex = updatedWarnings.findIndex((warning) =>
-              warning.message.includes("CHANGE IN WATER LEVEL DETECTED")
-            );
-            if (flowRateWarningIndex !== -1) {
-              // Replace the old flowRate warning
-              updatedWarnings[flowRateWarningIndex] = {
-                message: `CHANGE IN WATER LEVEL DETECTED: ${adjustedFlowRate} cm³/s at ${newDataPoint.time.toLocaleTimeString()}`,
-                timestamp: newDataPoint.time,
-              };
-            } else {
-              // Add a new flowRate warning if none existed before
-              updatedWarnings.push({
-                message: `CHANGE IN WATER LEVEL DETECTED: ${adjustedFlowRate} cm³/s at ${newDataPoint.time.toLocaleTimeString()}`,
-                timestamp: newDataPoint.time,
-              });
-            }
-          }
+      // Update warnings with only one warning per type, but don't remove them when data goes to 0
+      setWarnings((prevWarnings) => {
+        const newWarnings = [...prevWarnings]; // Clone existing warnings
     
-          // Replace the hygrometer warning if it already exists
-          if (parsedData.hygrometer > 0) {
-            const hygrometerWarningIndex = updatedWarnings.findIndex((warning) =>
-              warning.message.includes("WATER DETECTED")
-            );
-            if (hygrometerWarningIndex !== -1) {
-              // Replace the old hygrometer warning
-              updatedWarnings[hygrometerWarningIndex] = {
-                message: `WATER DETECTED: ${parsedData.hygrometer} % at ${newDataPoint.time.toLocaleTimeString()}`,
-                timestamp: newDataPoint.time,
-              };
-            } else {
-              // Add a new hygrometer warning if none existed before
-              updatedWarnings.push({
-                message: `WATER DETECTED: ${parsedData.hygrometer} % at ${newDataPoint.time.toLocaleTimeString()}`,
-                timestamp: newDataPoint.time,
-              });
-            }
-          }
-    
-          return updatedWarnings;
-        });
-
-        // Check for warnings and update
-        const newWarnings = [];
+        // Check if a flow rate warning exists, and update it
+        const flowRateWarningIndex = newWarnings.findIndex(warning =>
+          warning.type === "flowRate"
+        );
         if (flowRateData > 0) {
-          newWarnings.push({
+          const newFlowRateWarning = {
+            type: "flowRate",
             message: `CHANGE IN WATER LEVEL DETECTED: ${flowRateData} cm³/s at ${newDataPoint.time.toLocaleTimeString()}`,
             timestamp: newDataPoint.time,
-          });
+          };
+          if (flowRateWarningIndex !== -1) {
+            // Replace existing flow rate warning
+            newWarnings[flowRateWarningIndex] = newFlowRateWarning;
+          } else {
+            // Add new flow rate warning
+            newWarnings.push(newFlowRateWarning);
+          }
         }
-        if (hygrometerData > 0) {
-          newWarnings.push({
-            message: `WATER DETECTED: ${hygrometerData} % at ${newDataPoint.time.toLocaleTimeString()}`,
-            timestamp: newDataPoint.time,
-          });
-        }
-
-        // Append new warnings to state
-        setWarnings((prevWarnings) => [...prevWarnings, ...newWarnings]);
-
     
-        setLoading(false);
-      }
+        // Check if a hygrometer warning exists, and update it
+        const hygrometerWarningIndex = newWarnings.findIndex(warning =>
+          warning.type === "hygrometer"
+        );
+        if (hygrometerData > 0) {
+          const newHygrometerWarning = {
+            type: "hygrometer",
+            message: `WATER DETECTED: ${hygrometerData}% at ${newDataPoint.time.toLocaleTimeString()}`,
+            timestamp: newDataPoint.time,
+          };
+          if (hygrometerWarningIndex !== -1) {
+            // Replace existing hygrometer warning
+            newWarnings[hygrometerWarningIndex] = newHygrometerWarning;
+          } else {
+            // Add new hygrometer warning
+            newWarnings.push(newHygrometerWarning);
+          }
+        }
+    
+        return newWarnings;
+      });
+    
+      // Set loading to false after data is processed
+      setLoading(false);
     };    
 
     return () => {
@@ -175,7 +136,6 @@ const Dashboard = () => {
     ],
   };
 
-
   return (
     <div className="dashboard-container">
       <header className="header">
@@ -187,14 +147,6 @@ const Dashboard = () => {
             <h2>Warnings</h2>
             <div className="warnings-list">
               {warnings.length > 0 ? (
-                warnings.map((warning, index) => (
-                  <div key={index} className="limit-item">
-                    <p>{warning.message}</p>
-                  </div>
-                ))
-              ) : (
-                <p>No warnings at this time.</p>
-            {warnings.length > 0 ? (
                 warnings.map((warning, index) => (
                   <div key={index} className="limit-item">
                     <p>{warning.message}</p>
